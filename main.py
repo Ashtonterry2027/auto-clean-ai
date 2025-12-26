@@ -11,7 +11,6 @@ from pydantic import BaseModel, ValidationError
 from typing import Optional
 import numpy as np
 from collections import Counter
-import scipy.stats as stats
 
 
 
