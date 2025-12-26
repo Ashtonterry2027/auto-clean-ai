@@ -1,3 +1,4 @@
+
 # AutoClean AI - Data-Centric Pipeline
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
@@ -79,10 +80,12 @@ python -m pytest -q -m integration
 ```
 
 Providers and credentials
+
 * OpenAI: set `OPENAI_API_KEY` in your environment. The `OpenAIClient` in `llm_client.py` will read this variable by default.
 * Ollama: run a local Ollama instance or set `OLLAMA_URL` to your Ollama HTTP endpoint (default `http://localhost:11434`). The `OllamaClient` posts to `{OLLAMA_URL}/api/generate`.
 
 CI notes
+
 * The integration job in `.github/workflows/ci.yml` runs only when manually dispatched and installs `requirements-ml.txt`. If you want CI to call real provider APIs, add repository secrets (e.g., `OPENAI_API_KEY`) in the GitHub repo settings and reference them in the workflow.
 
 HELP: mocking the LLM client for local development

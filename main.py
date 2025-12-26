@@ -11,6 +11,8 @@ from pydantic import BaseModel, ValidationError
 from typing import Optional
 import numpy as np
 from collections import Counter
+import scipy.stats as stats
+
 
 
 class _UtilShim:
@@ -78,6 +80,96 @@ class AutoCleanPipeline:
         total_cells = self.df.size
         health_score = 100 - ((missing_values + duplicates) / total_cells * 100)
         logging.info(f"Initial Data Health Score: {health_score:.2f}/100")
+
+    def detect_outliers(self, factor=1.5):
+        logging.info("--- Step 1.5: Detecting Outliers (IQR Method) ---")
+        numeric_cols = self.df.select_dtypes(include=[np.number]).columns
+        # Exclude 'id' from outlier detection
+        numeric_cols = [c for c in numeric_cols if c.lower() != 'id']
+        
+        if len(numeric_cols) == 0:
+            logging.info("No numeric columns found for outlier detection.")
+            return
+
+        for col in numeric_cols:
+            Q1 = self.df[col].quantile(0.25)
+            Q3 = self.df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - (factor * IQR)
+            upper_bound = Q3 + (factor * IQR)
+            
+            outliers = self.df[(self.df[col] < lower_bound) | (self.df[col] > upper_bound)]
+            if not outliers.empty:
+                logging.warning(f"Found {len(outliers)} outliers in column '{col}' (Bounds: {lower_bound:.2f}, {upper_bound:.2f}):")
+                for idx, row in outliers.iterrows():
+                    logging.info(f"  - Row {idx}: value={row[col]}")
+            else:
+                logging.info(f"No outliers detected in column '{col}'.")
+
+    def find_label_issues(self):
+        logging.info("--- Step 2.5: Finding Label Issues (Cleanlab) ---")
+        if 'label' not in self.df.columns or self.df['label'].isnull().any():
+            logging.warning("Cleanlab requires a complete 'label' column. Skipping.")
+            return
+
+        try:
+            import cleanlab
+            from sklearn.preprocessing import LabelEncoder
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.model_selection import cross_val_predict
+
+            # Ensure we have embeddings
+            text_columns = self.df.select_dtypes(include=['object']).columns
+            if len(text_columns) == 0:
+                return
+            
+            target_col = text_columns[0]
+            sentences = self.df[target_col].fillna("").tolist()
+            
+            if self.model is None:
+                from sentence_transformers import SentenceTransformer
+                self.model = SentenceTransformer('all-MiniLM-L6-v2')
+            
+            X = self.model.encode(sentences)
+            le = LabelEncoder()
+            y = le.fit_transform(self.df['label'].astype(str))
+            
+            if len(np.unique(y)) < 2:
+                logging.info("Fewer than 2 classes; skipping label issue detection.")
+                return
+
+            # Get out-of-sample predicted probabilities
+            clf = LogisticRegression(max_iter=1000)
+            
+            # Dynamically determine folds based on min class size
+            class_counts = Counter(y)
+            min_class_size = min(class_counts.values())
+            
+            if min_class_size < 2:
+                logging.warning("Some classes have only 1 member; Cleanlab may be less accurate.")
+                num_cross_val_folds = 2 # Minimum possible
+            else:
+                num_cross_val_folds = min(min_class_size, 5)
+
+            if len(y) < num_cross_val_folds:
+                 logging.warning("Not enough data for cross-validation. Skipping Cleanlab.")
+                 return
+
+            pred_probs = cross_val_predict(clf, X, y, cv=num_cross_val_folds, method='predict_proba')
+            
+            # Find issues
+            issues = cleanlab.filter.find_label_issues(y, pred_probs)
+            if issues.any():
+                issue_indices = np.where(issues)[0]
+                logging.warning(f"Cleanlab found {len(issue_indices)} potential label issues at indices: {issue_indices}")
+                for idx in issue_indices:
+                    logging.info(f"Issue at idx {idx}: text='{sentences[idx]}', current_label='{self.df.iloc[idx]['label']}'")
+            else:
+                logging.info("No label issues detected by Cleanlab.")
+
+        except Exception as e:
+            logging.error(f"Error in Cleanlab analysis: {e}")
+
 
     def semantic_deduplication(self, threshold=0.85):
         logging.info("--- Step 2: Semantic De-duplication ---")
@@ -215,11 +307,14 @@ class AutoCleanPipeline:
     def run(self):
         self.load_data()
         self.audit_data()
+        self.detect_outliers()
         # Use configured threshold and llm client
         self.semantic_deduplication(threshold=self.threshold)
+        self.find_label_issues()
         self.llm_label_fix(llm_client=self.llm_client)
         self.save_data()
         logging.info("Pipeline completed successfully.")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AutoClean AI Data Pipeline")

@@ -1,11 +1,11 @@
-id,text,label
-1,The quick brown fox,animal
-2,The quick brown fox,animal
-3,A fast brown fox,animal
-4,NYC,location
-5,New York City,location
-6,Apple,fruit
-7,Apple Inc,company
-8,,unknown
-9,Python programming,skill
-10,Coding in Python,skill
+id,text,label,score
+1,The quick brown fox,animal,10
+2,The quick brown fox,animal,12
+3,A fast brown fox,animal,11
+4,NYC,location,50
+5,New York City,location,52
+6,Apple,fruit,5
+7,Apple Inc,company,1000
+8,,unknown,8
+9,Python programming,skill,20
+10,Coding in Python,skill,22
