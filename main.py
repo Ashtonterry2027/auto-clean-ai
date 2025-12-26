@@ -11,6 +11,8 @@ from pydantic import BaseModel, ValidationError
 from typing import Optional
 import numpy as np
 from collections import Counter
+import datetime
+from report_generator import ReportGenerator
 
 
 
@@ -56,6 +58,17 @@ class AutoCleanPipeline:
         self.llm_client = llm_client
         # Default semantic similarity threshold (can be overridden via CLI)
         self.threshold = threshold
+        # Data for the report
+        self.report_data = {
+            "health_score": 100,
+            "total_rows": 0,
+            "missing_values": 0,
+            "exact_duplicates": 0,
+            "semantic_duplicates": 0,
+            "semantic_matches": [],
+            "label_corrections": [],
+            "outliers": []
+        }
 
     def load_data(self):
         logging.info(f"Loading data from {self.file_path}...")
@@ -79,6 +92,11 @@ class AutoCleanPipeline:
         total_cells = self.df.size
         health_score = 100 - ((missing_values + duplicates) / total_cells * 100)
         logging.info(f"Initial Data Health Score: {health_score:.2f}/100")
+        
+        self.report_data["total_rows"] = len(self.df)
+        self.report_data["missing_values"] = int(missing_values)
+        self.report_data["exact_duplicates"] = int(duplicates)
+        self.report_data["health_score"] = round(health_score, 2)
 
     def detect_outliers(self, factor=1.5):
         logging.info("--- Step 1.5: Detecting Outliers (IQR Method) ---")
@@ -102,6 +120,11 @@ class AutoCleanPipeline:
                 logging.warning(f"Found {len(outliers)} outliers in column '{col}' (Bounds: {lower_bound:.2f}, {upper_bound:.2f}):")
                 for idx, row in outliers.iterrows():
                     logging.info(f"  - Row {idx}: value={row[col]}")
+                    self.report_data["outliers"].append({
+                        "column": col,
+                        "index": idx,
+                        "value": row[col]
+                    })
             else:
                 logging.info(f"No outliers detected in column '{col}'.")
 
@@ -143,15 +166,14 @@ class AutoCleanPipeline:
             # Dynamically determine folds based on min class size
             class_counts = Counter(y)
             min_class_size = min(class_counts.values())
-            
-            if min_class_size < 2:
-                logging.warning("Some classes have only 1 member; Cleanlab may be less accurate.")
-                num_cross_val_folds = 2 # Minimum possible
-            else:
-                num_cross_val_folds = min(min_class_size, 5)
 
-            if len(y) < num_cross_val_folds:
-                 logging.warning("Not enough data for cross-validation. Skipping Cleanlab.")
+            if min_class_size < 2:
+                logging.warning("Some classes have only 1 member; Cleanlab requires at least 2 members per class for stratified CV. Skipping.")
+                return
+
+            num_cross_val_folds = min(min_class_size, 5)
+            if len(y) < num_cross_val_folds * 2: # Heuristic: need enough samples
+                 logging.warning("Not enough data for reliable cross-validation. Skipping Cleanlab.")
                  return
 
             pred_probs = cross_val_predict(clf, X, y, cv=num_cross_val_folds, method='predict_proba')
@@ -204,10 +226,16 @@ class AutoCleanPipeline:
                 if cosine_scores[i][j] > threshold:
                     logging.info(f"Found match: '{sentences[i]}' == '{sentences[j]}' (Score: {cosine_scores[i][j]:.4f})")
                     duplicates_found.append((i, j))
+                    self.report_data["semantic_matches"].append({
+                        "original": sentences[i],
+                        "duplicate": sentences[j],
+                        "score": float(cosine_scores[i][j])
+                    })
                     rows_to_drop.add(j) # Mark the second one for removal
         
         if rows_to_drop:
             logging.info(f"Removing {len(rows_to_drop)} semantic duplicates...")
+            self.report_data["semantic_duplicates"] = len(rows_to_drop)
             self.df = self.df.drop(list(rows_to_drop)).reset_index(drop=True)
         else:
             logging.info("No semantic duplicates found.")
@@ -247,13 +275,17 @@ class AutoCleanPipeline:
                 conflict_idxs.update(conflict_rows)
 
         # 3) Rare labels (occurrence <= 1)
-        label_counts = Counter(self.df['label'].astype(str).tolist())
-        rare_labels = {lbl for lbl, cnt in label_counts.items() if cnt <= 1}
-        rare_mask = self.df['label'].astype(str).isin(rare_labels)
+        # Only flag rare labels if we have a decent amount of data, otherwise everything is rare
+        rare_idxs = set()
+        if len(self.df) > 20: 
+            label_counts = Counter(self.df['label'].astype(str).tolist())
+            rare_labels = {lbl for lbl, cnt in label_counts.items() if cnt <= 1}
+            rare_mask = self.df['label'].astype(str).isin(rare_labels)
+            rare_idxs.update(self.df[rare_mask].index.tolist())
 
-        candidate_mask = missing_mask | rare_mask
-        candidate_idxs = set(self.df[candidate_mask].index.tolist())
+        candidate_idxs = set(self.df[missing_mask].index.tolist())
         candidate_idxs.update(conflict_idxs)
+        candidate_idxs.update(rare_idxs)
 
         if not candidate_idxs:
             logging.info("No candidate rows found for LLM relabeling.")
@@ -295,6 +327,11 @@ class AutoCleanPipeline:
                 logging.info(f"Row {idx}: label '{current_label}' -> '{suggested}' (text: '{text}')")
                 self.df.at[idx, 'label'] = suggested
                 changes.append((idx, current_label, suggested))
+                self.report_data["label_corrections"].append({
+                    "text": text,
+                    "old_label": current_label,
+                    "new_label": suggested
+                })
 
         logging.info(f"LLM Agent suggested {len(changes)} corrections.")
 
@@ -312,6 +349,15 @@ class AutoCleanPipeline:
         self.find_label_issues()
         self.llm_label_fix(llm_client=self.llm_client)
         self.save_data()
+        
+        # Generate report
+        try:
+            generator = ReportGenerator()
+            report_path = generator.generate(self.report_data, output_path=self.output_path.replace('.csv', '_report.html'))
+            logging.info(f"Report generated: {report_path}")
+        except Exception as e:
+            logging.error(f"Failed to generate report: {e}")
+
         logging.info("Pipeline completed successfully.")
 
 

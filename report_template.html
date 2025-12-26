@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoClean AI - Data Health Report</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #ec4899;
+            --bg: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Hero Section */
+        header {
+            text-align: center;
+            padding: 4rem 0;
+            background: radial-gradient(circle at top center, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            background: linear-gradient(to right, #6366f1, #ec4899);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--text-dim);
+            max-width: 600px;
+            margin: 0 auto 2rem;
+        }
+
+        /* Health Score Circle */
+        .health-score-container {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            margin: 2rem auto;
+        }
+
+        .health-circle {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+
+            background: conic-gradient(var(--primary) {
+                        {
+                        health_score
+                    }
+                }
+
+                %, #1e293b 0);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 50px rgba(99, 102, 241, 0.3);
+        }
+
+        .health-circle::after {
+            content: '';
+            position: absolute;
+            width: 170px;
+            height: 170px;
+            background: var(--bg);
+            border-radius: 50%;
+        }
+
+        .health-value {
+            position: relative;
+            z-index: 10;
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 4rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--card-border);
+            border-radius: 1.5rem;
+            padding: 2rem;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary);
+        }
+
+        .stat-label {
+            color: var(--text-dim);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 600;
+        }
+
+        .stat-value.error {
+            color: var(--error);
+        }
+
+        .stat-value.warning {
+            color: var(--warning);
+        }
+
+        .stat-value.success {
+            color: var(--success);
+        }
+
+        /* Sections */
+        section {
+            margin-bottom: 4rem;
+        }
+
+        h2 {
+            font-size: 2rem;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        h2::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 32px;
+            background: var(--primary);
+            border-radius: 4px;
+        }
+
+        /* Table Styles */
+        .table-container {
+            background: var(--card-bg);
+            border-radius: 1.5rem;
+            border: 1px solid var(--card-border);
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1rem 1.5rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-success {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+        }
+
+        .badge-error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+        }
+
+        /* Animation */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate {
+            animation: fadeIn 0.8s ease-out forwards;
+        }
+
+        .delay-1 {
+            animation-delay: 0.2s;
+        }
+
+        .delay-2 {
+            animation-delay: 0.4s;
+        }
+
+        .delay-3 {
+            animation-delay: 0.6s;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header class="animate">
+            <h1>AutoClean AI</h1>
+            <p class="subtitle">Intelligent Data Auditing & Cleaning Pipeline Report</p>
+
+            <div class="health-score-container">
+                <div class="health-circle">
+                    <span class="health-value">{{ health_score }}</span>
+                </div>
+                <p style="margin-top: 1rem; color: var(--text-dim)">Data Health Score</p>
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card animate delay-1">
+                <p class="stat-label">Total Rows</p>
+                <p class="stat-value">{{ total_rows }}</p>
+            </div>
+            <div class="stat-card animate delay-1">
+                <p class="stat-label">Missing Values</p>
+                <p class="stat-value {% if missing_values > 0 %}error{% endif %}">{{ missing_values }}</p>
+            </div>
+            <div class="stat-card animate delay-2">
+                <p class="stat-label">Exact Duplicates</p>
+                <p class="stat-value {% if exact_duplicates > 0 %}warning{% endif %}">{{ exact_duplicates }}</p>
+            </div>
+            <div class="stat-card animate delay-2">
+                <p class="stat-label">Semantic Duplicates</p>
+                <p class="stat-value warning">{{ semantic_duplicates }}</p>
+            </div>
+        </div>
+
+        {% if semantic_matches %}
+        <section class="animate delay-3">
+            <h2>Semantic Analysis</h2>
+            <p style="margin-bottom: 1.5rem; color: var(--text-dim)">The following records were identified as
+                semantically identical and merged.</p>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Primary Record</th>
+                            <th>Duplicate Record</th>
+                            <th>Similarity Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for match in semantic_matches %}
+                        <tr>
+                            <td>{{ match.original }}</td>
+                            <td>{{ match.duplicate }}</td>
+                            <td><span class="badge badge-success">{{ (match.score * 100) | round(2) }}%</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endif %}
+
+        {% if label_corrections %}
+        <section class="animate delay-3">
+            <h2>LLM Label Corrections</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Text</th>
+                            <th>Original Label</th>
+                            <th>Suggested Label</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in label_corrections %}
+                        <tr>
+                            <td>{{ item.text }}</td>
+                            <td>{{ item.old_label }}</td>
+                            <td>{{ item.new_label }}</td>
+                            <td><span class="badge badge-warning">Updated</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endif %}
+
+        {% if outliers %}
+        <section class="animate delay-3">
+            <h2>Outlier Detection</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Column</th>
+                            <th>Index</th>
+                            <th>Value</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for outlier in outliers %}
+                        <tr>
+                            <td><code>{{ outlier.column }}</code></td>
+                            <td>#{{ outlier.index }}</td>
+                            <td>{{ outlier.value }}</td>
+                            <td><span class="badge badge-error">Flagged</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endif %}
+
+        <footer style="text-align: center; color: var(--text-dim); margin-top: 4rem; padding-bottom: 2rem;">
+            Generated by AutoClean AI Pipeline &bull; {{ timestamp }}
+        </footer>
+    </div>
+</body>
+
+</html>
