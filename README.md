@@ -2,6 +2,8 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/Ashtonterry2027/auto-clean-ai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Ashtonterry2027/auto-clean-ai/actions/workflows/ci.yml)
+[![Codecov](https://codecov.io/gh/Ashtonterry2027/auto-clean-ai/branch/main/graph/badge.svg)](https://codecov.io/gh/Ashtonterry2027/auto-clean-ai)
 
 **An LLM-powered agent for automated data auditing, cleaning, and semantic labeling.**
 
@@ -61,6 +63,77 @@ Run the pipeline on your dataset by specifying the input and output paths:
 ```bash
 python main.py --file messy_data.csv --output cleaned_data.csv
 ```
+
+## 🔬 Integration tests and LLM providers
+
+Integration tests exercise the real ML model and external LLM providers. They are intentionally separated from the fast unit test suite.
+
+Run integration tests locally (slow — may download model weights):
+
+```bash
+# optional: create and activate virtualenv
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+pip install -r requirements-ml.txt
+python -m pytest -q -m integration
+```
+
+Providers and credentials
+- OpenAI: set `OPENAI_API_KEY` in your environment. The `OpenAIClient` in `llm_client.py` will read this variable by default.
+- Ollama: run a local Ollama instance or set `OLLAMA_URL` to your Ollama HTTP endpoint (default `http://localhost:11434`). The `OllamaClient` posts to `{OLLAMA_URL}/api/generate`.
+
+CI notes
+- The integration job in `.github/workflows/ci.yml` runs only when manually dispatched and installs `requirements-ml.txt`. If you want CI to call real provider APIs, add repository secrets (e.g., `OPENAI_API_KEY`) in the GitHub repo settings and reference them in the workflow.
+
+HELP: mocking the LLM client for local development
+-------------------------------------------------
+If you want to develop or test locally without calling external LLM APIs, mock the LLM client:
+
+- Create a small class implementing `suggest_label(text, current_label)` and pass it into the pipeline:
+
+```py
+from main import AutoCleanPipeline
+
+class DummyLLM:
+		def suggest_label(self, text, current_label):
+				# simple deterministic behavior for tests
+				t = (text or '').lower()
+				if 'nyc' in t or 'new york' in t:
+						return 'location'
+				if 'fox' in t:
+						return 'animal'
+				return current_label
+
+pipeline = AutoCleanPipeline('in.csv', 'out.csv', llm_client=DummyLLM())
+pipeline.load_data()
+pipeline.llm_label_fix()
+```
+
+This keeps development fast and offline. The unit tests in `tests/` already demonstrate how to inject a mock LLM client.
+
+Example: GitHub Actions secrets wiring (safe example)
+-------------------------------------------------
+If you want the integration job to call a real provider (OpenAI) during a manual run, add the secret `OPENAI_API_KEY` to your repository (Settings → Secrets). Then modify the integration job (it already supports manual dispatch) to expose the secret as an environment variable when running tests. In our CI we do this safely by reading the secret only in the integration job.
+
+Example snippet (already wired in `.github/workflows/ci.yml` integration job):
+
+```yaml
+			- name: Run integration tests (marked with @pytest.mark.integration)
+				env:
+					OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+				run: |
+					python -m pytest -q -m integration
+```
+
+When running locally, set the env var temporarily:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+python -m pytest -q -m integration
+```
+
+The code in `llm_client.py` reads `OPENAI_API_KEY` by default if you instantiate `OpenAIClient()` without passing an explicit key.
+
 
 ### 3. Example Result
 
