@@ -185,7 +185,13 @@ class AutoCleanPipeline:
         changes = []
         for idx in sorted(candidate_idxs):
             row = self.df.loc[idx]
-            text = row[text_col] if text_col is not None else ''
+            # Coerce text to string safely (handle NaN/float/etc.) before sending to LLM
+            if text_col is not None:
+                raw_text = row[text_col]
+                text = "" if pd.isna(raw_text) else str(raw_text)
+            else:
+                text = ""
+
             current_label = None if pd.isna(row['label']) else str(row['label'])
 
             try:

@@ -166,3 +166,4 @@ The pipeline identifies that "A fast brown fox" is semantically similar to "The 
 ## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+export OPENAI_API_KEY="sk-..."
